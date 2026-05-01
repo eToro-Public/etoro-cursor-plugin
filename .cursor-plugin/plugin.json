@@ -1,0 +1,25 @@
+{
+  "name": "etoro",
+  "version": "1.1.0",
+  "description": "eToro API integration for Cursor — rules, skills, and live API documentation for building on the eToro Public API. Covers OAuth SSO, market data, trading, account-snapshot calculations, agent-portfolios (with bulk, rebalance, and conditional-rule flows), and social features.",
+  "author": {
+    "name": "eToro",
+    "email": "apisupport@etoro.com"
+  },
+  "homepage": "https://api-portal.etoro.com/",
+  "keywords": [
+    "etoro",
+    "trading",
+    "finance",
+    "api",
+    "market-data",
+    "portfolio",
+    "watchlists",
+    "social-trading",
+    "copy-trading",
+    "agent-portfolios",
+    "oauth",
+    "sso"
+  ],
+  "logo": "https://commons.wikimedia.org/wiki/File:Etoro_logo.svg"
+}

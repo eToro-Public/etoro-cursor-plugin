@@ -1,0 +1,154 @@
+---
+description: Enforces eToro Public API request/response conventions — hosts, headers, authentication, casing, rate limits, and per-endpoint quirks.
+alwaysApply: true
+---
+
+# eToro API Conventions
+
+Foundational rules for any code that calls the eToro Public API. These apply to virtually every eToro request and supersede general HTTP conventions where they conflict.
+
+## Two distinct hosts
+
+eToro splits its endpoints across two hosts with different content types and error envelopes. **You cannot share one client wrapper between them.**
+
+| Concern | Public API | SSO / STS |
+|---|---|---|
+| Base URL | `https://public-api.etoro.com/api/v1` | `https://www.etoro.com/sso/...` (and adjacent OAuth endpoints) |
+| Request body | `application/json` | `application/x-www-form-urlencoded` |
+| Error envelope | Free-form `{ error: string }` plus HTTP status | OAuth-style `{ error, error_description }` |
+| Typical endpoints | `/trading/info/...`, `/market-data/...`, `/user-info/people`, `/api/v1/me` | `/sso/v1/token`, `/sso/oidc/token` (exchange + refresh), `/sso/v1/revoke` |
+
+Sending JSON to the SSO host produces `400` responses with effectively empty bodies — silent failure. Always form-encode SSO requests.
+
+## Authentication: Bearer OR API key, never both
+
+The Public API accepts EITHER:
+
+- **Bearer token:** `Authorization: Bearer <access_token>` — typically the `access_token` returned by the SSO OAuth flow.
+- **API key pair:** `x-api-key: <partner_key>` + `x-user-key: <per_user_key>` — for partner integrations using manual keys.
+
+**NEVER send both.** The API rejects requests with both auth families set, even if each is independently valid. If you migrate from API keys to SSO, drop the `x-api-key`/`x-user-key` headers entirely — leaving them in "just in case" produces 401s on otherwise-valid Bearer tokens.
+
+## Required headers on Public API requests
+
+| Header | Value | When |
+|---|---|---|
+| `Authorization` | `Bearer <access_token>` | SSO auth |
+| `x-api-key` | partner API key | API-key auth (with `x-user-key`) |
+| `x-user-key` | per-user key | API-key auth (with `x-api-key`) |
+| `x-request-id` | UUID v4 generated **per request** | Always — used for tracing on the eToro side |
+
+## Field-name casing varies by endpoint
+
+Different eToro endpoints use different casing conventions for identifier fields, and responses are returned verbatim. **Don't normalize at the deserialization layer assuming a single convention** — model each endpoint's wire types as they appear, and translate to your domain casing at one explicit boundary if/when you need a unified internal shape.
+
+| Endpoint | Casing of identifier fields |
+|---|---|
+| `/trading/info/{env}/pnl` | Capital-suffix: `instrumentID`, `mirrorID`, `positionID`, `parentPositionID`, `orderID`, `CID` |
+| `/trading/info/trade/history` | lowerCamel: `instrumentId`, `positionId` |
+| `/user-info/people` | lowerCamel |
+| `/market-data/search` | `instrumentId` (lowercase `d`) |
+| `/market-data/instruments` | `instrumentID` (capital `D`) |
+| `/api/v1/me` | lowerCamel: `gcid`, `realCid`, `demoCid` |
+
+The same logical entity (a position) appears as `instrumentID` in PNL responses and `instrumentId` in trade-history responses. Model each one to match its endpoint exactly — your wire types will mirror the per-endpoint convention, which keeps the I/O boundary honest and avoids silent field-name mismatches at runtime.
+
+## Demo vs. real environments
+
+- **Demo endpoints** contain `/demo/` in the path (e.g. `/trading/info/demo/pnl`). Use for testing and paper trading.
+- **Real endpoints** omit `/demo/` (or use `/real/` where the URL is environment-scoped). Use for live trading.
+- Match the credential's environment to the endpoint — sending a demo SSO token to a real endpoint typically returns 401 or `InsufficientPermissions`.
+- **`/trading/info/trade/history` requires a real-environment credential.** Demo keys / demo SSO tokens return `InsufficientPermissions`; surface a specific error rather than treating it as a generic auth failure.
+
+### Determining a user-key's environment (probing)
+
+Each user-key is bound to **one** environment (real or demo) when the user creates it in eToro Settings; a given key **cannot** be reused on the other environment's paths.
+
+**Why probe:** This is mainly an **app-side auto-detection** trick so your client knows which environment a **single pasted or stored key** belongs to, routes requests to the matching `/real/` vs `/demo/` paths, and can validate that the user picked the correct environment in your UI (if you expose an env toggle) **without** relying on them remembering which key they copied.
+
+**Dual-key apps:** Many apps let users supply **both** a real key and a demo key and switch between them in-app. In that pattern you still store two credentials and select the active environment explicitly — probing is for **inferring** which bucket an **unlabeled** key belongs to (first connect, import, or a single "API key" field), not a replacement for storing two keys when you intentionally support both.
+
+Probe once when you need to classify a key (e.g. at first use or session start):
+
+```
+GET /trading/info/real/pnl   (with x-api-key + x-user-key)
+```
+
+| Response | Key environment | Use these endpoints for that key |
+|---|---|---|
+| `200` | Real key | `/real/` (or unsegmented) endpoints |
+| `403 InsufficientPermissions` | Demo key | `/demo/` endpoints |
+
+Cache the probe result **per key** and reuse it until the key changes. Agent-portfolio user-tokens (the `userToken` returned at agent-portfolio creation) are always real — skip the probe for those.
+
+## Rate limits and error response classes
+
+A breached rate limit returns HTTP **429**. Distinguish 429s from 5xx and from 413/414 (payload too large) — they require different recovery strategies:
+
+- **429** → backoff and retry at the same payload size (smaller payloads don't help).
+- **413/414** → halve the payload and retry (typical on `/market-data/instruments` with too many IDs).
+- **5xx** → short exponential backoff and retry.
+- **401** → refresh access token once; if refresh fails with `invalid_grant`, the session is dead.
+
+### Trade-execution endpoints have an additional 20 req/min limit
+
+Trade-execution endpoints — `/trading/execution/market-open-orders/by-amount`, `/trading/execution/market-open-orders/by-units`, `/trading/execution/market-close-orders/positions/{positionId}`, `/trading/execution/limit-orders` — share an **additional 20 requests/minute rolling-window rate limit**, separate from the general API rate limit. This applies regardless of account type (main or agent-portfolio).
+
+For apps that bulk-execute (portfolio builds, rebalances, conditional-rule trigger storms), space requests **at least 3 seconds apart** to stay under the limit safely. On 429, exponential backoff: 15s → 30s → 60s, max 3 retries per individual call.
+
+The full retry table and recovery patterns live in the `building-etoro-api-client` skill.
+
+### Trade-execution endpoints have NO idempotency key — at-most-once delivery
+
+The eToro API offers no header or body field that lets you safely re-send the same trade after an ambiguous outcome. **Resending after a timeout, connection reset, or 5xx response can — and does — produce duplicate positions.** Treat every trade-execution POST with at-most-once discipline:
+
+| Outcome | Meaning | Action |
+|---|---|---|
+| **2xx** with an `orderId` (or equivalent) | Server accepted and recorded the order | Done. **Don't resend.** Move on to verification. |
+| **4xx (except 429)** — 400, 403, 404, etc. | Server rejected explicitly; nothing was placed | Log as failed; surface to the user; **don't retry the same payload** (a 400 won't become a 200) |
+| **401** | Credentials invalid | **Stop the workflow immediately.** Surface the credential failure; don't retry indefinitely. |
+| **429** | Rate-limited; the server explicitly told you it didn't process | Safe to retry — the only safe retry case (see backoff above). |
+| **5xx with body** | Server processed and failed | Log as failed; **don't retry** — you don't know whether the order was placed before the failure. |
+| **Timeout / connection reset / no response / parse error** | Truly ambiguous — the order may or may not have been placed | **Don't retry.** Mark as ambiguous; reconcile by reading `/pnl` at verification (see below). |
+
+The reasoning: a request that timed out might have reached the server, executed, and lost the response on the way back. A retry in that case opens a duplicate position. **Missing positions are recoverable** (verify, then place again deliberately); **duplicates are messy to unwind**.
+
+#### Reconciling ambiguous trades
+
+After workflow execution completes, read `/pnl` (after the ~10 second cache wait — see `etoro-account-snapshot`) and check whether each ambiguous trade appears in `positions[]` or `ordersForOpen[]`:
+
+- **Found in either array** → the order *did* land despite the ambiguous response. Reclassify as filled or pending. **Do not** place another order.
+- **Not found in either array** → the order didn't land. Now (and only now) is it safe to ask the user whether to retry it as a fresh trade.
+
+The same reconciliation pattern applies to multi-trade workflows (bulk builds, rebalances): capture per-trade outcomes as `'ok' | 'failed' | 'ambiguous' | 'rate_limited_giveup'`, then read `/pnl` once at the end and flip ambiguous → ok/failed by checking which entries actually landed.
+
+## Response-shape gotchas
+
+- **`position.unrealizedPnL?.pnL`** — live PnL is nested inside an object that can be missing for closed/historical positions. The inner key is `pnL` (lowercase `n`, capital `L`). Always use optional chaining; `pnl`, `PnL`, and `PNL` will all miss.
+- **`unrealizedPnL` may be a flat number on portfolio-level fields** (`clientPortfolio.unrealizedPnL`) but a **nested object** on per-position fields (`position.unrealizedPnL.pnL`). Don't conflate them.
+
+## Portfolio math
+
+The PnL endpoint (`GET /trading/info/{env}/pnl`) returns `{ clientPortfolio }` containing `credit`, `positions[]`, `mirrors[]`, `orders[]`, `ordersForOpen[]`. For both **account-level aggregation formulas** (Available Cash, Total Invested, Profit/Loss, Equity) and **per-position interpretation rules** (native currency, leveraged margin, fees-vs-dividends blending, mirror-array deduplication), see the **`etoro-account-snapshot`** rule.
+
+## Limit orders (market-if-touched)
+
+Endpoint: `POST /trading/execution/{env}/limit-orders`
+
+- The `Rate` field is the trigger price at which the market order fires. It must be **better than the current price** (lower for Buy, higher for Sell).
+- `StopLossRate` and `TakeProfitRate` **must be greater than 0** — the API rejects the request otherwise, even with `IsNoStopLoss: true`.
+- If the user doesn't specify SL/TP, provide extreme positive values (e.g. `0.0001` for the "losing" side, `Rate * 100` for the "winning" side).
+
+## Closing positions
+
+- Close by `positionID`, never by symbol.
+- Set `UnitsToDeduct` to `null` for full close, or a number for partial close.
+
+## Leverage
+
+- **If the user does not specify a leverage, default to `Leverage: 1`** (no leverage). Send the field explicitly rather than omitting it — relying on the API's implicit default risks accidental leveraged positions if eToro's default ever differs from `1` for a given instrument or account type.
+- Only send a `Leverage` value greater than `1` when the user has explicitly asked for leverage. Don't infer leverage from the instrument type or assume a "reasonable" multiplier.
+
+## Other optional parameters
+
+- For optional fields the user hasn't mentioned (other than `Leverage`), omit them rather than sending placeholder values. The API has reasonable defaults; supplying junk values can cause silent shape-changes in the response.

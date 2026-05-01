@@ -1,0 +1,59 @@
+---
+description: Identity rules for eToro SSO / OAuth integration — `gcid` vs `realCid` vs `demoCid`, why never to use the OIDC `sub` claim as a user key, the `cidList` vs `gcid` data-leak trap, refresh-token rotation, and detecting dead sessions (`invalid_grant`). Apply when implementing "Sign in with eToro", exchanging or refreshing access tokens, calling `/api/v1/me` or `/user-info/people?cidList=`, persisting eToro user records, looking up other users, or handling 401 / refresh failures / "Reconnect to eToro" flows.
+alwaysApply: false
+---
+
+# eToro SSO Identity
+
+When integrating eToro SSO, identity rules matter more than they look — getting them wrong silently corrupts your user table or leaks data between users. Read this before storing anything keyed off an eToro identity.
+
+## 1. Never use the OIDC `sub` claim as a cross-app identity key
+
+eToro's STS issues a per-OAuth-client **Pairwise Pseudonymous Identifier** (PPID) as the OIDC `sub` claim. The same physical eToro user receives a *different* `sub` from each STS client registration — your dev and prod environments will see different `sub` values for the same person.
+
+**Symptoms of the mistake:**
+
+- Users have separate accounts in dev vs. prod even though they signed in with the same eToro login.
+- Migrating between OAuth clients silently splits each user's data into two records.
+- "Why does this user have two portfolios?" — that's why.
+
+## 2. Always resolve identity via `/api/v1/me`; use `gcid` as your primary key
+
+After the OAuth token exchange, call:
+
+```
+GET /api/v1/me
+Authorization: Bearer <access_token>
+```
+
+Response shape:
+
+```json
+{ "gcid": <number>, "realCid": <number>, "demoCid": <number> }
+```
+
+**All three are stable cross-app identifiers with a one-to-one relationship.** Given any one of them you can derive the other two via `/api/v1/me`. None of them rotates and none of them changes when the user signs in from a different OAuth client. The choice between them is about **role**, not safety:
+
+- **`gcid`** — global, environment-independent identity. Recommended as the primary key on your user record (e.g. `etoro_gcid` column / claim) because it's the same value regardless of whether the user is in real or demo.
+- **`realCid`** — the user's Customer ID (CID) for the real environment. **Whenever an eToro endpoint asks for a `CID` or `cidList`, it means `realCid`** (or `demoCid` in demo) — it does **not** mean `gcid`.
+- **`demoCid`** — the equivalent for the demo environment.
+
+The unsafe identifier is the OIDC `sub` claim (see §1) — not any of these three.
+
+## 3. Pass `realCid`, never `gcid`, to `/user-info/people` (and similar CID-taking endpoints)
+
+```
+GET /user-info/people?cidList=<realCid>
+```
+
+`gcid` and `realCid` are different *numeric values* for the same user — they live in different ID namespaces. The endpoint accepts any number structurally (no validation error fires), so passing a `gcid` will silently resolve to a *different* user whose CID happens to numerically equal that `gcid` value. This is a hard-to-spot data-leak bug: the wrong user's profile comes back, with no error. Always pass `realCid` (or `demoCid` in demo) to anything that takes a `CID` / `cidList` parameter.
+
+## 4. Refresh tokens rotate; persist the new one atomically
+
+Every successful refresh against the eToro SSO token endpoint (with `grant_type=refresh_token`) returns a NEW refresh token; the previous one is immediately invalidated. Persist `access_token` and `refresh_token` in the same DB write — if you only update `access_token`, the next refresh will fail with `400 invalid_grant` and lock the user out.
+
+The full token-handling playbook lives in the **`implementing-etoro-sso`** skill; what's non-negotiable here is that the new RT must be persisted, not discarded.
+
+## 5. Refresh failure ≠ network error
+
+A `400 invalid_grant` from the SSO token endpoint (or a `401` on a Public API call where the subsequent refresh also fails) means the session is dead — eToro has revoked it server-side. Don't retry indefinitely; surface a "Reconnect to eToro" flow that re-runs the auth-code grant against the same user record. See the **`handling-etoro-session-expiry`** skill.
