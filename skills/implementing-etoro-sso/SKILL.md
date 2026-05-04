@@ -150,7 +150,7 @@ async function refreshAndPersist(gcid: number): Promise<EtoroRequestContext> {
 
 ## Step 4 — Resolve identity via `/api/v1/me`, use `gcid` as the primary key
 
-The OIDC `sub` claim is per-OAuth-client and unsafe as a cross-app key. The three IDs returned by `/api/v1/me` (`gcid`, `realCid`, `demoCid`) are all stable cross-app identifiers in a 1:1 relationship — `gcid` is the recommended primary key because it's environment-independent (same value in real and demo), while `realCid` / `demoCid` are what eToro endpoints accept when they want a "CID".
+The OIDC `sub` claim is per-OAuth-client and unsafe as a cross-app key. The three IDs returned by `/api/v1/me` (`gcid`, `realCid`, `demoCid`) are all stable cross-app identifiers in a 1:1 relationship — `gcid` is the recommended primary key (it's the global, environment-independent identity, distinct from `realCid` / `demoCid` even though all three are stable for a given user). `realCid` is what `/user-info/people?cidList=` and other endpoints expect when they want a "CID" — even when calling from demo credentials. `demoCid` is **not** an acceptable value for `cidList`; passing it silently returns an unrelated user. See the **`etoro-sso-identity`** rule §3.
 
 ```typescript
 async function fetchMe(accessToken: string) {

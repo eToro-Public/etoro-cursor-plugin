@@ -71,6 +71,7 @@ if (ctx.accessToken) {
 1. Authenticate the user.
 2. Fetch portfolio and PnL: `GET /trading/info/demo/pnl` (or `/real/pnl`).
    - Response: `{ clientPortfolio }` containing `credit`, `positions[]`, `mirrors[]`, `orders[]`, `ordersForOpen[]`.
+   - **Identifier fields inside these arrays are capital-suffix** (`positionID`, `instrumentID`, `mirrorID`, `parentPositionID`, `orderID`, `CID`) — model them exactly as returned.
    - Collect ALL positions: `[...clientPortfolio.positions, ...clientPortfolio.mirrors.flatMap(m => m.positions)]`.
 3. Enrich with instrument metadata: `GET /market-data/instruments?instrumentIds=<ids>`.
    - Response: `{ instrumentDisplayDatas: [{ instrumentID, instrumentDisplayName, symbolFull, images[] }] }`.
@@ -85,6 +86,7 @@ if (ctx.accessToken) {
 2. View investor performance: `GET /user-info/people/{username}/gain`.
 3. View investor portfolio: `GET /user-info/people/{username}/portfolio/live`.
 4. Read social feeds: `GET /feeds/user/{userId}` or `GET /feeds/instrument/{marketId}`.
+   - Response: `{ discussions: [...], paging, metadata }`. Each entry is `{ id, post: { owner: { username }, message: { text }, created } }` — the post body, author, and timestamp are nested under `post`, not on the discussion itself.
 
 ## API Base URL
 

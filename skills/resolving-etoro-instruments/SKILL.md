@@ -35,7 +35,9 @@ Note for the code: `/market-data/search` returns `instrumentId` (lowercase `d`);
 
 ## Step 2 — Batch metadata lookups (25–50 IDs per request)
 
-`/market-data/instruments` rejects large batches with HTTP 413 / 414, so cap each call at **25 to 50** IDs. The full implementation handles the adaptive ladder when 413/414 fires:
+`/market-data/instruments` rejects large batches with HTTP 413 / 414, so cap each call at **25 to 50** IDs. The full implementation handles the adaptive ladder when 413/414 fires.
+
+Serialize the ID list with a **literal `,`** (not `%2C`) — see `etoro-api-conventions`.
 
 ```typescript
 const BATCH_SIZE_LADDER = [50, 25] as const;

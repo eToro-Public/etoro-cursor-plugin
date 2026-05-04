@@ -35,18 +35,18 @@ Response shape:
 **All three are stable cross-app identifiers with a one-to-one relationship.** Given any one of them you can derive the other two via `/api/v1/me`. None of them rotates and none of them changes when the user signs in from a different OAuth client. The choice between them is about **role**, not safety:
 
 - **`gcid`** — global, environment-independent identity. Recommended as the primary key on your user record (e.g. `etoro_gcid` column / claim) because it's the same value regardless of whether the user is in real or demo.
-- **`realCid`** — the user's Customer ID (CID) for the real environment. **Whenever an eToro endpoint asks for a `CID` or `cidList`, it means `realCid`** (or `demoCid` in demo) — it does **not** mean `gcid`.
-- **`demoCid`** — the equivalent for the demo environment.
+- **`realCid`** — the user's Customer ID (CID) for the real environment. **Whenever an eToro endpoint asks for a `CID` or `cidList`, it means `realCid`** — it does **not** mean `gcid` or `demoCid`. This holds even when the calling credentials are demo credentials; `/user-info/people` indexes on `realCID` regardless of environment.
+- **`demoCid`** — the user's CID for the demo environment. Used only by demo trading/portfolio endpoints (e.g. paths under `/trading/info/demo/...`); it is **not** what `cidList` or other "CID" parameters expect — passing `demoCid` to those silently returns an unrelated user (see §3).
 
 The unsafe identifier is the OIDC `sub` claim (see §1) — not any of these three.
 
-## 3. Pass `realCid`, never `gcid`, to `/user-info/people` (and similar CID-taking endpoints)
+## 3. Pass `realCid` — never `gcid`, never `demoCid` — to `/user-info/people` (and similar CID-taking endpoints)
 
 ```
 GET /user-info/people?cidList=<realCid>
 ```
 
-`gcid` and `realCid` are different *numeric values* for the same user — they live in different ID namespaces. The endpoint accepts any number structurally (no validation error fires), so passing a `gcid` will silently resolve to a *different* user whose CID happens to numerically equal that `gcid` value. This is a hard-to-spot data-leak bug: the wrong user's profile comes back, with no error. Always pass `realCid` (or `demoCid` in demo) to anything that takes a `CID` / `cidList` parameter.
+`gcid`, `realCid`, and `demoCid` are three different *numeric values* for the same user, living in three different ID namespaces. `/user-info/people` (and other endpoints taking a `CID` / `cidList`) indexes on the **`realCID`** field, so any *other* number you pass — `gcid`, `demoCid`, or anything else — will silently resolve to a *different* user whose `realCID` happens to numerically equal that integer. The endpoint accepts any number structurally, no validation error fires, and the wrong profile comes back with no error. **This is true regardless of whether your credentials are real or demo** — even on demo-environment auth, `/user-info/people` still expects `realCid`. Always pass `realCid` (from `/api/v1/me`) to anything that takes a `CID` / `cidList` parameter.
 
 ## 4. Refresh tokens rotate; persist the new one atomically
 

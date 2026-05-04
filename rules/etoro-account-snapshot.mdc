@@ -12,7 +12,7 @@ The rule covers two layers:
 - **§1 — Account-level aggregation formulas** that match eToro's official calculation guides. Use them verbatim, or your numbers will disagree with the eToro UI.
 - **§§2–5 — Per-field correctness rules** for values whose meaning isn't obvious from the field name alone.
 
-The endpoint returns `{ clientPortfolio }` containing `credit`, `unrealizedPnL`, `positions[]`, `mirrors[]`, `orders[]`, `ordersForOpen[]`.
+The endpoint returns `{ clientPortfolio }` containing `credit`, `unrealizedPnL`, `positions[]`, `mirrors[]`, `orders[]`, `ordersForOpen[]`. Identifier fields inside `positions[]`, `mirrors[]`, `orders[]`, and `ordersForOpen[]` use **capital-suffix** casing — `positionID`, `instrumentID`, `mirrorID`, `parentPositionID`, `orderID`, `CID` — per `etoro-api-conventions`. Type these exactly as they arrive; don't rename to `positionId`/`instrumentId` at the deserialization layer.
 
 > **The PnL endpoint is cached for ~10 seconds.** After executing trades, the cached response will not yet reflect the new state — `positions[]`, `ordersForOpen[]`, and the derived Available Cash all lag by up to ten seconds. Apps that execute trades and then immediately re-read PnL (e.g. rebalance flows that close some positions to free cash before opening others, or post-trade verification logic) must wait ~10 seconds before re-calling, or they'll act on stale data and double-spend the freed cash.
 

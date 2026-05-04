@@ -28,7 +28,11 @@ export async function etoroFetch<T>(
   const res = await fetchWithRetry(url, { headers });
   return parseEtoroResponse<T>(res);
 }
+```
 
+List-valued query params (e.g. `instrumentIds=1,2,3`) must be joined with a literal `,` — see `etoro-api-conventions`.
+
+```typescript
 // SSO/STS client — form-encoded in, OAuth-style errors out
 export async function etoroSsoPost<T>(
   path: string,

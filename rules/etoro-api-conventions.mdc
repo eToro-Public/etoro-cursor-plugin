@@ -38,6 +38,10 @@ The Public API accepts EITHER:
 | `x-user-key` | per-user key | API-key auth (with `x-api-key`) |
 | `x-request-id` | UUID v4 generated **per request** | Always — used for tracing on the eToro side |
 
+## Comma-separated list query params must use a literal `,`
+
+For endpoints that take a comma-joined list of IDs (e.g. `/market-data/instruments?instrumentIds=`, `/market-data/instruments/rates?instrumentIds=`, `/user-info/people?cidList=`, `?usernames=`), the separator must be a literal `,`. Percent-encoded `%2C` is rejected. Note that default URL builders like `URLSearchParams` encode commas — emit the value as a raw `ids.join(',')`.
+
 ## Field-name casing varies by endpoint
 
 Different eToro endpoints use different casing conventions for identifier fields, and responses are returned verbatim. **Don't normalize at the deserialization layer assuming a single convention** — model each endpoint's wire types as they appear, and translate to your domain casing at one explicit boundary if/when you need a unified internal shape.
