@@ -2,8 +2,6 @@
 
 Official eToro plugin for Cursor — **for developers building apps and integrations on top of the eToro Public API**. Provides AI-powered guidance in your IDE for trading, market data, portfolio management, OAuth/SSO, instrument resolution, and session handling.
 
-> **Building a runtime LLM agent instead?** If you're not writing IDE code but rather building a runtime agent that acts on behalf of an end user (a chatbot that places trades when the user asks), see the companion skill package at <https://github.com/guyba-tr/etoro-agent-skills>. It carries runtime-specific patterns (intent confirmation, percentage-of-equity display rules, anchor-freeze, at-most-once trade execution, conversational onboarding for agent-portfolios) that intentionally aren't in this Cursor plugin.
-
 ## What's Included
 
 ### MCP Server
