@@ -14,7 +14,7 @@ Official eToro plugin for Cursor — **for developers building apps and integrat
 2. Get your eToro API credentials:
    - Log in to [eToro](https://www.etoro.com/).
    - Go to **Settings > Trading**.
-   - Create a new API key (choose Virtual for demo or Real for live trading).
+   - Create a new API key (choose Demo for virtual trading or Real for live trading).
 3. The MCP server provides live documentation — ask the agent about any eToro API endpoint.
 
 ## API Documentation
