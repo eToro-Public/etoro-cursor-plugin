@@ -4,28 +4,9 @@ Official eToro plugin for Cursor — **for developers building apps and integrat
 
 ## What's Included
 
-### MCP Server
-
-- **etoro-api-docs** — connects to eToro's official MCP server at `https://api-portal.etoro.com/mcp` for live API documentation search and reference.
-
-### Rules
-
-Always-on guardrails for working with the eToro Public API:
-
-- **etoro-api-conventions** — hosts (Public API vs SSO/STS), required headers, the never-mix auth rule, casing inconsistency across endpoints, demo vs. real environments, environment probing (200 vs 403 to detect a key's environment), rate limits including the 20 req/min trade-execution sub-limit, the at-most-once / no-idempotency-key rule for trade-execution endpoints, response-shape gotchas, and trading defaults (Leverage, SL/TP, closing positions).
-- **etoro-id-resolution** — instrument IDs and user CIDs are both stable; persist `symbol→ID` and `username→CID` maps for known assets/users and live-resolve only unknowns.
-- **etoro-sso-identity** — never use the OIDC `sub` claim as a cross-app key; resolve `gcid` via `/api/v1/me`; pass `realCid` (not `gcid`) to CID-taking endpoints; persist refresh tokens atomically.
-- **etoro-account-snapshot** — rules for any data about the user's eToro account (balance, equity, open positions, copy-trading mirrors, pending orders, P&L), all of which comes from a single endpoint that returns a full account snapshot. Includes the official aggregation formulas (Available Cash, Total Invested, Profit/Loss, Equity), the ~10-second response cache, and per-field correctness rules (native currency, leveraged margin, fees-vs-dividends blending, mirror-array dedup).
-
-### Skills
-
-Procedural playbooks triggered by specific tasks:
-
-- **etoro-apps** — high-level guidance for building applications on top of the eToro API (OAuth, common patterns, trading bots, dashboards).
-- **building-etoro-api-client** — robust HTTP client design: dual hosts, retry strategy by error class, typed error hierarchy, 401-then-refresh-once.
-- **implementing-etoro-sso** — end-to-end OAuth auth-code grant with PKCE, token exchange, atomic refresh-token rotation, identity resolution.
-- **resolving-etoro-instruments** — symbol→ID search, batched metadata lookups with 25–50-per-batch + adaptive 413/414 sizing, image-variant selection, background straggler retries.
-- **handling-etoro-session-expiry** — detect refresh-token revocation, surface a "Reconnect to eToro" CTA instead of looping on dead tokens.
+- **MCP Server** — live access to eToro's official API documentation at `https://api-portal.etoro.com/mcp`, so the agent can look up any endpoint on demand.
+- **Rules** — always-on conventions and guardrails the agent applies whenever you write code against the eToro API: request shape, authentication, identifier handling, account-data semantics, and identity model.
+- **Skills** — procedural playbooks the agent loads when you tackle a specific task: building an API client, implementing SSO, resolving instruments, handling session expiry, or scaffolding a full app.
 
 ## Getting Started
 
